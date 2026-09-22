@@ -56,6 +56,9 @@ class QueueApiIntegrationTests extends TestInfrastructure {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private QueueAdmissionLock admissionLock;
+
     private final HttpClient http = HttpClient.newHttpClient();
 
     private String adminToken;
@@ -137,6 +140,21 @@ class QueueApiIntegrationTests extends TestInfrastructure {
         HttpResponse<String> user2Reservation = send(
                 "POST", "/api/reservations", user2Token, reserveSeat2, user2QueueToken);
         assertThat(user2Reservation.statusCode()).isEqualTo(201);
+    }
+
+    @Test
+    void expiredOwnerCannotReleaseLockAcquiredByAnotherWorker() throws Exception {
+        String lockKey = "queue:lock:test:" + SEQUENCE.incrementAndGet();
+        String firstOwner = "first-owner";
+        String secondOwner = "second-owner";
+
+        assertThat(admissionLock.acquire(lockKey, firstOwner, java.time.Duration.ofMillis(100))).isTrue();
+        Thread.sleep(150);
+        assertThat(admissionLock.acquire(lockKey, secondOwner, java.time.Duration.ofSeconds(1))).isTrue();
+
+        admissionLock.release(lockKey, firstOwner);
+
+        assertThat(redisTemplate.opsForValue().get(lockKey)).isEqualTo(secondOwner);
     }
 
     private String createToken(MemberRole role) {

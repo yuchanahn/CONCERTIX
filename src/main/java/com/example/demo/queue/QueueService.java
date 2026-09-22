@@ -22,16 +22,19 @@ public class QueueService {
     private static final String PREFIX = "queue:";
 
     private final StringRedisTemplate redisTemplate;
+    private final QueueAdmissionLock admissionLock;
     private final ConcertRepository concertRepository;
     private final int maxAdmitted;
     private final Duration admissionTtl;
 
     public QueueService(
             StringRedisTemplate redisTemplate,
+            QueueAdmissionLock admissionLock,
             ConcertRepository concertRepository,
             @Value("${app.queue.max-admitted:20}") int maxAdmitted,
             @Value("${app.queue.admission-ttl:2m}") Duration admissionTtl) {
         this.redisTemplate = redisTemplate;
+        this.admissionLock = admissionLock;
         this.concertRepository = concertRepository;
         this.maxAdmitted = maxAdmitted;
         this.admissionTtl = admissionTtl;
@@ -99,8 +102,8 @@ public class QueueService {
 
     private void admitAvailable(UUID concertId) {
         String lockKey = lockKey(concertId);
-        Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", Duration.ofSeconds(2));
-        if (!Boolean.TRUE.equals(locked)) {
+        String ownerId = UUID.randomUUID().toString();
+        if (!admissionLock.acquire(lockKey, ownerId, Duration.ofSeconds(2))) {
             return;
         }
 
@@ -131,7 +134,7 @@ public class QueueService {
                 redisTemplate.opsForZSet().add(admittedKey(concertId), member, expiresAt.toEpochMilli());
             }
         } finally {
-            redisTemplate.delete(lockKey);
+            admissionLock.release(lockKey, ownerId);
         }
     }
 

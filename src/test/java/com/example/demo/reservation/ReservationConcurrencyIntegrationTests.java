@@ -141,6 +141,47 @@ class ReservationConcurrencyIntegrationTests extends TestInfrastructure {
         assertThat(seat.getStatus()).isEqualTo(SeatStatus.HELD);
     }
 
+    @Test
+    void oneUserCannotExceedTicketLimitByHoldingDifferentSeatsConcurrently() throws Exception {
+        String concertId = createConcertDraft(10, 1, 300);
+        String sessionId = getFirstSessionId(concertId);
+        List<String> seatIds = createSeats(concertId, sessionId, 2);
+        send("POST", "/api/admin/concerts/" + concertId + "/publish", adminToken, null);
+
+        String userToken = createToken(MemberRole.USER);
+        List<String> payloads = seatIds.stream()
+                .map(seatId -> String.format("{\"sessionId\":\"%s\",\"seatId\":\"%s\"}", sessionId, seatId))
+                .toList();
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch readyLatch = new CountDownLatch(2);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(2);
+        ConcurrentLinkedQueue<Integer> statusCodes = new ConcurrentLinkedQueue<>();
+
+        for (String payload : payloads) {
+            executor.submit(() -> {
+                readyLatch.countDown();
+                try {
+                    startLatch.await();
+                    statusCodes.add(send("POST", "/api/reservations", userToken, payload).statusCode());
+                } catch (Exception exception) {
+                    statusCodes.add(500);
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+        }
+
+        assertThat(readyLatch.await(5, TimeUnit.SECONDS)).isTrue();
+        startLatch.countDown();
+        assertThat(doneLatch.await(30, TimeUnit.SECONDS)).isTrue();
+        executor.shutdown();
+
+        assertThat(statusCodes).containsExactlyInAnyOrder(201, 409);
+        assertThat(reservationRepository.count()).isEqualTo(1);
+    }
+
     private String createToken(MemberRole role) {
         int seq = SEQUENCE.incrementAndGet();
         Member member = new Member("user" + seq + "@test.com", "hash", "User" + seq, role);
@@ -202,6 +243,32 @@ class ReservationConcurrencyIntegrationTests extends TestInfrastructure {
             return matcher.group(1);
         }
         throw new IllegalStateException("Seat ID not found");
+    }
+
+    private List<String> createSeats(String concertId, String sessionId, int count) throws Exception {
+        String payload = String.format("""
+                {
+                    "section": "VIP",
+                    "row": "A",
+                    "startNumber": 1,
+                    "count": %d,
+                    "price": 100000
+                }
+                """, count);
+        HttpResponse<String> response = send(
+                "POST",
+                "/api/admin/concerts/" + concertId + "/sessions/" + sessionId + "/seats",
+                adminToken,
+                payload);
+        Matcher matcher = Pattern.compile("\\\"id\\\":\\\"([^\\\"]+)\\\"").matcher(response.body());
+        List<String> seatIds = new ArrayList<>();
+        while (matcher.find()) {
+            seatIds.add(matcher.group(1));
+        }
+        if (seatIds.size() != count) {
+            throw new IllegalStateException("Expected " + count + " seat IDs but got " + seatIds.size());
+        }
+        return seatIds;
     }
 
     private String extractField(String json, String field) {

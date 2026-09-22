@@ -53,7 +53,7 @@ public class ReservationService {
 
     @Transactional
     public ReservationResponse holdAndReserve(UUID memberId, CreateReservationRequest request, String queueToken) {
-        Member member = memberRepository.findById(memberId)
+        Member member = memberRepository.findByIdForUpdate(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("Member not found"));
 
         // Acquire pessimistic write lock on the seat

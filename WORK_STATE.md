@@ -1,5 +1,28 @@
 # 작업 상태
 
+## QUEUE-002A: 만료된 Redis 락의 소유권 있는 해제
+
+- 날짜: 2026-09-22
+- 상태: VERIFYING
+- 문제: 기존 `QueueService`는 2초 TTL 락을 고정값으로 획득하고 finally에서 무조건 삭제했다. 작업 A의 TTL이 지난 뒤 작업 B가 같은 락을 획득하면 A가 B의 락을 삭제할 수 있었다.
+- 재현: 실제 Testcontainers Redis에서 A가 100ms 락을 획득 → TTL 만료 → B가 새 락 획득 → A가 해제. 수정 전 B의 락 키가 삭제되어 `expiredOwnerCannotReleaseLockAcquiredByAnotherWorker`가 실패했다.
+- 수정: `QueueAdmissionLock`을 분리하고 UUID 소유자 값을 락에 저장했다. Lua의 get-compare-delete 한 번으로 현재 소유자만 해제한다. QueueService는 매 admission 실행마다 새 소유자 ID를 사용한다.
+- 검증: QueueApiIntegrationTests 2개 성공. 전체 `gradlew.bat --no-daemon test --rerun-tasks` 성공, 총 24 tests / failures 0 / errors 0 / skipped 0.
+- 범위와 한계: 이번 수정은 만료된 소유자의 잘못된 unlock만 해결한다. 대기자 pop·토큰·입장 집합 갱신을 하나의 원자 연산으로 만들지는 않았고, 작업 중 Redis 장애의 부분 상태 복구는 QUEUE-002B로 남긴다.
+- 독립 리뷰: 현재 세션에 HARNESS가 지정한 워커 생성·대기 도구가 노출되지 않아 실행하지 못했다. 독립 리뷰 전까지 DONE으로 바꾸지 않는다.
+
+## CONCURRENCY-001: 사용자별 구매 한도 경쟁 조건
+
+- 날짜: 2026-09-22
+- 상태: VERIFYING
+- 문제: 같은 사용자가 한 공연의 서로 다른 좌석을 동시에 선점하면, 각 트랜잭션이 다른 좌석 행만 잠그고 활성 예매 수를 0으로 읽어 `maxTicketsPerUser=1`을 초과할 수 있었다.
+- 재현: `ReservationConcurrencyIntegrationTests.oneUserCannotExceedTicketLimitByHoldingDifferentSeatsConcurrently`에서 같은 사용자·서로 다른 좌석 2개·구매 한도 1로 동시에 HTTP 요청. 수정 전 응답 `[201, 201]`과 Reservation 2건을 확인했다.
+- 수정: `MemberRepository.findByIdForUpdate`로 사용자 행에 `PESSIMISTIC_WRITE`를 획득한 뒤 구매 한도와 좌석 상태를 검증한다. 같은 사용자의 선점 요청은 직렬화되고 서로 다른 사용자는 계속 병렬 처리된다.
+- 검증: 수정 직후 동시성 테스트 2개 성공. `gradlew.bat --no-daemon test --rerun-tasks` 성공, 총 23 tests / failures 0 / errors 0 / skipped 0.
+- 한계: 사용자 행 잠금은 같은 사용자의 서로 다른 공연 예매도 직렬화한다. 사용자·공연별 한도 행 도입은 별도 성능 측정과 스키마 설계가 필요하다.
+- 독립 리뷰: 현재 세션에는 HARNESS가 지정한 워커 생성·대기 도구가 노출되지 않아 실행하지 못했다. 이 작업은 독립 리뷰 전까지 DONE으로 바꾸지 않는다.
+- 다음 작업: 새 컨텍스트 독립 리뷰가 가능해지면 현재 diff와 테스트 증거만 제공해 검토한다. 이후 QUEUE-002 원자성 재현으로 진행한다.
+
 ## PORTFOLIO-001: 저장소/CI/Docker 기준점
 
 - 날짜: 2026-09-22

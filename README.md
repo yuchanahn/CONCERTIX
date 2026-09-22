@@ -100,7 +100,7 @@ stateDiagram-v2
 
 현재 전체 자동화 테스트 결과:
 
-- 22 tests
+- 24 tests
 - failures 0
 - errors 0
 - skipped 0
