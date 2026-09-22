@@ -1,12 +1,32 @@
 # 작업 상태
 
+## PERFORMANCE-002: 서로 다른 좌석 예매 처리량 기준점
+
+- 날짜: 2026-09-22
+- 상태: DONE (측정 범위 한정)
+- 구현: `perf/k6/reservation-throughput.js`가 매 실행마다 공연·좌석·사용자를 준비하고, 서로 다른 사용자·서로 다른 좌석 예매를 `http.batch`로 전송한다. 예매 요청만 `name=reservation` 태그로 분리했다.
+- 측정 환경: Java 21 애플리케이션 1개, 임시 PostgreSQL 17·Redis 7 컨테이너, 로컬 PC, 대기열 비활성화. 측정 종료 후 임시 서버와 컨테이너를 중지했다.
+- 결과: 50건은 50 x 201 / 예상 외 0 / p95 178.78ms. 100건은 100 x 201 / 예상 외 0 / p95 190.19ms.
+- 증거: `perf/evidence/2026-09-22-throughput/`의 k6 로그 및 summary JSON.
+- 한계: 단일 실행이라 통계적 비교가 아니며 CPU·메모리·DB connection·반복 측정을 수집하지 않았다. 대기열 ON/OFF 비교와 장시간 부하는 후속 작업이다.
+
+## QUEUE-002B: Redis Lua 기반 admission 원자화
+
+- 날짜: 2026-09-22
+- 상태: VERIFYING
+- 문제: QUEUE-002A의 소유권 있는 unlock은 잘못된 락 해제를 막지만, TTL보다 긴 admission 처리에서는 다른 작업이 중간 상태를 읽을 가능성이 남는다. 기존 admission은 만료 입장자 정리, 허용 인원 계산, 대기열 pop, 토큰 저장, 입장 집합 갱신을 여러 Redis 명령으로 수행했다.
+- 수정: 해당 단계들을 `ADMIT_AVAILABLE` Lua script 한 번으로 묶었다. 스크립트는 만료 입장자를 제거하고 남은 slot만큼 FIFO 대기자를 pop한 뒤, member token·token owner·입장 만료 시각을 함께 기록한다. 토큰 UUID는 애플리케이션에서 생성해 전달하므로 순번 기반 예측 가능 토큰으로 바꾸지 않았다.
+- 검증: max-admitted=1 환경에서 만료 후 대기 사용자 2명이 동시에 상태 조회해도 응답상 admitted는 정확히 1명이고 Redis admitted ZSET도 1명인 HTTP 통합 테스트 추가. 전체 `gradlew.bat --no-daemon test --rerun-tasks` 성공, 총 24 tests / failures 0 / errors 0 / skipped 0.
+- 범위와 한계: join의 중복 등록 검사와 deactivate의 키 정리는 아직 admission script와 하나의 원자 작업이 아니다. Redis 장애·재시작 시 대기열 복구 정책, Redis Cluster 키 슬롯, 다중 인스턴스 장시간 부하 측정도 미검증이다.
+- 독립 리뷰: 현재 세션에 HARNESS가 지정한 워커 생성·대기 도구가 노출되지 않아 실행하지 못했다. 독립 리뷰 전까지 DONE으로 바꾸지 않는다.
+
 ## QUEUE-002A: 만료된 Redis 락의 소유권 있는 해제
 
 - 날짜: 2026-09-22
 - 상태: VERIFYING
 - 문제: 기존 `QueueService`는 2초 TTL 락을 고정값으로 획득하고 finally에서 무조건 삭제했다. 작업 A의 TTL이 지난 뒤 작업 B가 같은 락을 획득하면 A가 B의 락을 삭제할 수 있었다.
 - 재현: 실제 Testcontainers Redis에서 A가 100ms 락을 획득 → TTL 만료 → B가 새 락 획득 → A가 해제. 수정 전 B의 락 키가 삭제되어 `expiredOwnerCannotReleaseLockAcquiredByAnotherWorker`가 실패했다.
-- 수정: `QueueAdmissionLock`을 분리하고 UUID 소유자 값을 락에 저장했다. Lua의 get-compare-delete 한 번으로 현재 소유자만 해제한다. QueueService는 매 admission 실행마다 새 소유자 ID를 사용한다.
+- 수정 당시: `QueueAdmissionLock`을 분리하고 UUID 소유자 값을 락에 저장했다. Lua의 get-compare-delete 한 번으로 현재 소유자만 해제했다. 이후 QUEUE-002B에서 admission 전체를 Lua script로 원자화하면서 이 잠금 방식은 제거했다.
 - 검증: QueueApiIntegrationTests 2개 성공. 전체 `gradlew.bat --no-daemon test --rerun-tasks` 성공, 총 24 tests / failures 0 / errors 0 / skipped 0.
 - 범위와 한계: 이번 수정은 만료된 소유자의 잘못된 unlock만 해결한다. 대기자 pop·토큰·입장 집합 갱신을 하나의 원자 연산으로 만들지는 않았고, 작업 중 Redis 장애의 부분 상태 복구는 QUEUE-002B로 남긴다.
 - 독립 리뷰: 현재 세션에 HARNESS가 지정한 워커 생성·대기 도구가 노출되지 않아 실행하지 못했다. 독립 리뷰 전까지 DONE으로 바꾸지 않는다.

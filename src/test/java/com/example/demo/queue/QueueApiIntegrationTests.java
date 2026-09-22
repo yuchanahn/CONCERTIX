@@ -8,6 +8,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -55,9 +60,6 @@ class QueueApiIntegrationTests extends TestInfrastructure {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
-
-    @Autowired
-    private QueueAdmissionLock admissionLock;
 
     private final HttpClient http = HttpClient.newHttpClient();
 
@@ -143,18 +145,44 @@ class QueueApiIntegrationTests extends TestInfrastructure {
     }
 
     @Test
-    void expiredOwnerCannotReleaseLockAcquiredByAnotherWorker() throws Exception {
-        String lockKey = "queue:lock:test:" + SEQUENCE.incrementAndGet();
-        String firstOwner = "first-owner";
-        String secondOwner = "second-owner";
+    void concurrentAdmissionKeepsActiveUsersWithinConfiguredLimit() throws Exception {
+        String concertId = createConcertDraft();
+        send("POST", "/api/admin/concerts/" + concertId + "/publish", adminToken, null, null);
+        send("POST", "/api/admin/queues/" + concertId + "/activate", adminToken, null, null);
 
-        assertThat(admissionLock.acquire(lockKey, firstOwner, java.time.Duration.ofMillis(100))).isTrue();
-        Thread.sleep(150);
-        assertThat(admissionLock.acquire(lockKey, secondOwner, java.time.Duration.ofSeconds(1))).isTrue();
+        String user3Token = createToken(MemberRole.USER);
+        send("POST", "/api/queues/" + concertId + "/join", user1Token, null, null);
+        send("POST", "/api/queues/" + concertId + "/join", user2Token, null, null);
+        send("POST", "/api/queues/" + concertId + "/join", user3Token, null, null);
+        Thread.sleep(1500);
 
-        admissionLock.release(lockKey, firstOwner);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(2);
+        ConcurrentLinkedQueue<String> responses = new ConcurrentLinkedQueue<>();
+        for (String token : new String[] {user2Token, user3Token}) {
+            executor.submit(() -> {
+                ready.countDown();
+                try {
+                    start.await();
+                    responses.add(send("GET", "/api/queues/" + concertId + "/me", token, null, null).body());
+                } catch (Exception exception) {
+                    responses.add("error");
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
 
-        assertThat(redisTemplate.opsForValue().get(lockKey)).isEqualTo(secondOwner);
+        assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+        start.countDown();
+        assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
+        executor.shutdown();
+
+        assertThat(responses.stream().filter(body -> body.contains("\"admitted\":true")).count()).isEqualTo(1);
+        Long admittedCount = redisTemplate.opsForZSet().zCard("queue:admitted:" + concertId);
+        assertThat(admittedCount).isEqualTo(1);
     }
 
     private String createToken(MemberRole role) {

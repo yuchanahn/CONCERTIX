@@ -1,0 +1,74 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: perf/k6/reservation-throughput.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):
+              * default: 1 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)
+
+
+Run       [ 100% ] setup()
+default   [   0% ]
+
+Run       [ 100% ] setup()
+default   [   0% ]
+
+Run       [ 100% ] setup()
+default   [   0% ]
+
+Run       [ 100% ] setup()
+default   [   0% ]
+
+running (00m05.0s), 1/1 VUs, 0 complete and 0 interrupted iterations
+default   [   0% ] 1 VUs  00m00.2s/10m0s  0/1 shared iters
+
+
+  █ THRESHOLDS 
+
+    checks
+    ✓ 'rate==1' rate=100.00%
+
+    http_req_duration{name:reservation}
+    ✓ 'p(95)<2000' p(95)=178.78ms
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 2       0.399068/s
+    checks_succeeded...: 100.00% 2 out of 2
+    checks_failed......: 0.00%   0 out of 2
+
+    ✓ every distinct-seat reservation succeeds
+    ✓ no unexpected reservation status
+
+    CUSTOM
+    reservation_created............: 50    9.97669/s
+
+    HTTP
+    http_req_duration..............: avg=113.6ms  min=12.68ms  med=98.39ms  max=669.37ms p(90)=163.34ms p(95)=177.36ms
+      { expected_response:true }...: avg=113.6ms  min=12.68ms  med=98.39ms  max=669.37ms p(90)=163.34ms p(95)=177.36ms
+      { name:reservation }.........: avg=144.82ms min=122.83ms med=137.35ms max=179.47ms p(90)=176.87ms p(95)=178.78ms
+    http_req_failed................: 0.00% 0 out of 106
+    http_reqs......................: 106   21.150584/s
+
+    EXECUTION
+    iteration_duration.............: avg=182.29ms min=182.29ms med=182.29ms max=182.29ms p(90)=182.29ms p(95)=182.29ms
+    iterations.....................: 1     0.199534/s
+    vus............................: 1     min=0        max=1
+    vus_max........................: 1     min=1        max=1
+
+    NETWORK
+    data_received..................: 96 kB 19 kB/s
+    data_sent......................: 44 kB 8.8 kB/s
+
+
+
+
+running (00m05.0s), 0/1 VUs, 1 complete and 0 interrupted iterations
+default ✓ [ 100% ] 1 VUs  00m00.2s/10m0s  1/1 shared iters

@@ -2,12 +2,13 @@ package com.example.demo.queue;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import com.example.demo.concert.ConcertRepository;
@@ -20,21 +21,42 @@ import com.example.demo.queue.QueueExceptions.QueueConcertNotFoundException;
 public class QueueService {
 
     private static final String PREFIX = "queue:";
+    private static final DefaultRedisScript<Long> ADMIT_AVAILABLE = new DefaultRedisScript<>("""
+            local now = tonumber(ARGV[1])
+            local maxAdmitted = tonumber(ARGV[2])
+            local ttlMillis = tonumber(ARGV[3])
+            local concertId = ARGV[4]
+            local memberTokenPrefix = ARGV[5]
+            local tokenPrefix = ARGV[6]
+
+            redis.call('ZREMRANGEBYSCORE', KEYS[2], 0, now)
+            local slots = math.max(0, maxAdmitted - redis.call('ZCARD', KEYS[2]))
+            for i = 1, slots do
+                local nextMember = redis.call('ZPOPMIN', KEYS[1], 1)
+                if #nextMember == 0 then
+                    break
+                end
+
+                local memberId = nextMember[1]
+                local token = ARGV[6 + i]
+                redis.call('SET', memberTokenPrefix .. memberId, token, 'PX', ttlMillis)
+                redis.call('SET', tokenPrefix .. token, concertId .. ':' .. memberId, 'PX', ttlMillis)
+                redis.call('ZADD', KEYS[2], now + ttlMillis, memberId)
+            end
+            return redis.call('ZCARD', KEYS[2])
+            """, Long.class);
 
     private final StringRedisTemplate redisTemplate;
-    private final QueueAdmissionLock admissionLock;
     private final ConcertRepository concertRepository;
     private final int maxAdmitted;
     private final Duration admissionTtl;
 
     public QueueService(
             StringRedisTemplate redisTemplate,
-            QueueAdmissionLock admissionLock,
             ConcertRepository concertRepository,
             @Value("${app.queue.max-admitted:20}") int maxAdmitted,
             @Value("${app.queue.admission-ttl:2m}") Duration admissionTtl) {
         this.redisTemplate = redisTemplate;
-        this.admissionLock = admissionLock;
         this.concertRepository = concertRepository;
         this.maxAdmitted = maxAdmitted;
         this.admissionTtl = admissionTtl;
@@ -101,41 +123,20 @@ public class QueueService {
     }
 
     private void admitAvailable(UUID concertId) {
-        String lockKey = lockKey(concertId);
-        String ownerId = UUID.randomUUID().toString();
-        if (!admissionLock.acquire(lockKey, ownerId, Duration.ofSeconds(2))) {
-            return;
+        Object[] arguments = new Object[6 + maxAdmitted];
+        arguments[0] = Long.toString(System.currentTimeMillis());
+        arguments[1] = Integer.toString(maxAdmitted);
+        arguments[2] = Long.toString(admissionTtl.toMillis());
+        arguments[3] = concertId.toString();
+        arguments[4] = PREFIX + "member-token:" + concertId + ":";
+        arguments[5] = PREFIX + "token:";
+        for (int i = 0; i < maxAdmitted; i++) {
+            arguments[6 + i] = UUID.randomUUID().toString();
         }
-
-        try {
-            long now = System.currentTimeMillis();
-            redisTemplate.opsForZSet().removeRangeByScore(admittedKey(concertId), 0, now);
-            Long admittedCount = redisTemplate.opsForZSet().zCard(admittedKey(concertId));
-            long slots = Math.max(0, maxAdmitted - (admittedCount == null ? 0 : admittedCount));
-            if (slots == 0) {
-                return;
-            }
-
-            Set<TypedTuple<String>> nextMembers = redisTemplate.opsForZSet().popMin(waitingKey(concertId), slots);
-            if (nextMembers == null || nextMembers.isEmpty()) {
-                return;
-            }
-
-            Instant expiresAt = Instant.now().plus(admissionTtl);
-            for (TypedTuple<String> tuple : nextMembers) {
-                String member = tuple.getValue();
-                if (member == null) {
-                    continue;
-                }
-                UUID memberId = UUID.fromString(member);
-                String token = UUID.randomUUID().toString();
-                redisTemplate.opsForValue().set(memberTokenKey(concertId, memberId), token, admissionTtl);
-                redisTemplate.opsForValue().set(tokenKey(token), concertId + ":" + memberId, admissionTtl);
-                redisTemplate.opsForZSet().add(admittedKey(concertId), member, expiresAt.toEpochMilli());
-            }
-        } finally {
-            admissionLock.release(lockKey, ownerId);
-        }
+        redisTemplate.execute(
+                ADMIT_AVAILABLE,
+                List.of(waitingKey(concertId), admittedKey(concertId)),
+                arguments);
     }
 
     private QueueStatusResponse statusInternal(UUID concertId, UUID memberId) {
@@ -197,10 +198,6 @@ public class QueueService {
 
     private String sequenceKey(UUID concertId) {
         return PREFIX + "sequence:" + concertId;
-    }
-
-    private String lockKey(UUID concertId) {
-        return PREFIX + "lock:" + concertId;
     }
 
     private String memberTokenKey(UUID concertId, UUID memberId) {
