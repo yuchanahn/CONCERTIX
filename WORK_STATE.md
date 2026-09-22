@@ -1,5 +1,18 @@
 # 작업 상태
 
+## PORTFOLIO-001: 저장소/CI/Docker 기준점
+
+- 날짜: 2026-09-22
+- 상태: DONE
+- Git 저장소 초기화 및 `main` 브랜치 생성.
+- 첫 기준 커밋 생성: `8bf8a13 feat: establish concert ticketing portfolio baseline`.
+- GitHub Actions CI 추가: Java 21, 전체 테스트, executable bootJar 빌드.
+- 멀티 스테이지 Dockerfile 및 `.dockerignore` 추가.
+- 로컬 `gradlew bootJar` 성공.
+- 로컬 Docker 이미지 `concertix:local` 빌드 성공.
+- 현재 애플리케이션은 최신 코드로 `http://localhost:8081`에서 실행 중.
+- 남은 포트폴리오 인프라 작업: 원격 GitHub 저장소 연결, 실제 배포 환경 구성, 대기열 적용 전/후 부하 비교.
+
 ## QUEUE-001 + PERFORMANCE-001: Redis 대기열 및 k6 경합 검증
 
 - 날짜: 2026-09-22
@@ -27,7 +40,7 @@
 - 문서:
   - README.md 포트폴리오용 구조/상태 전이/동시성/k6 결과 정리.
   - PERFORMANCE.md 측정 결과 기록.
-- 다음 작업: Git 초기화 및 CI/배포, 대기열 적용 전후 성능 비교.
+- 후속 작업: Git 초기화와 CI/Docker 완료. 다음은 실제 배포 및 대기열 적용 전/후 성능 비교.
 
 ## PAYMENT-001: 가상 결제 및 예매 확정
 
