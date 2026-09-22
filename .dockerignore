@@ -1,0 +1,9 @@
+.git
+.gradle
+.harness
+.idea
+.vscode
+bin
+build
+.env
+*.log

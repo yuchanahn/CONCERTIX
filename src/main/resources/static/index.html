@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CONCERTIX - 콘서트 티켓 예매 & 관리 플랫폼</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- Glass Top Navigation -->
+  <header>
+    <div class="brand">
+      <span class="brand-icon">🎟️</span>
+      <span style="font-family: 'Outfit', sans-serif;">CONCERTIX</span>
+    </div>
+
+    <!-- Navigation Mode Switcher -->
+    <div class="nav-tabs">
+      <button id="tab-booking-btn" class="tab-btn active" onclick="switchTab('booking')">🎟️ 티켓 예매</button>
+      <button id="tab-admin-btn" class="tab-btn" onclick="switchTab('admin')">⚙️ 관리자 콘솔</button>
+    </div>
+
+    <!-- User & Quick Role Switcher -->
+    <div class="user-panel">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span id="user-role-badge" class="role-badge guest">GUEST</span>
+        <span id="current-user-info" style="font-size: 0.85rem; font-weight: 500;">게스트</span>
+      </div>
+
+      <!-- Quick Test Accounts -->
+      <div style="display: flex; gap: 4px;">
+        <button class="btn btn-secondary" style="padding: 5px 9px; font-size: 0.75rem;" onclick="quickLogin('ADMIN')" title="관리자로 자동 로그인">👑 관리자</button>
+        <button class="btn btn-secondary" style="padding: 5px 9px; font-size: 0.75rem;" onclick="quickLogin('USER1')" title="예매자1로 자동 로그인">👤 예매자1</button>
+        <button class="btn btn-secondary" style="padding: 5px 9px; font-size: 0.75rem;" onclick="quickLogin('USER2')" title="예매자2로 자동 로그인">👤 예매자2</button>
+      </div>
+
+      <button id="logout-btn" class="btn btn-danger" style="display: none; padding: 5px 10px; font-size: 0.75rem;" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main>
+    <!-- TAB 1: User Booking Portal -->
+    <div id="tab-booking" class="tab-content active">
+      
+      <!-- 1. Concerts Section -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">✨ 예매 가능한 콘서트</div>
+          <button class="btn btn-secondary" style="font-size: 0.75rem;" onclick="loadPublicConcerts()">새로고침</button>
+        </div>
+        <div id="public-concert-list" class="grid-3">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- 2. Session & Seat Map Section -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">🪑 회차 및 실시간 좌석 선택</div>
+          <div id="session-selector" style="display: flex; gap: 8px;">
+            <!-- Session buttons populated by JS -->
+          </div>
+        </div>
+
+        <!-- Stage Bar -->
+        <div class="stage-container">
+          <div class="stage-bar">STAGE (무대)</div>
+          
+          <!-- Legend -->
+          <div class="seat-legend">
+            <div class="legend-item"><div class="legend-dot" style="background: var(--seat-available);"></div> 예매 가능</div>
+            <div class="legend-item"><div class="legend-dot" style="background: var(--seat-held);"></div> 선점 중 (결제 대기)</div>
+            <div class="legend-item"><div class="legend-dot" style="background: var(--seat-reserved);"></div> 예매 완료</div>
+            <div class="legend-item"><div class="legend-dot" style="background: var(--seat-disabled);"></div> 선택 불가</div>
+          </div>
+
+          <!-- Seat Grid Layout -->
+          <div id="seat-grid" class="seat-grid-layout">
+            <!-- Seat rows populated by JS -->
+          </div>
+        </div>
+
+        <!-- Selected Seat Action Bar -->
+        <div id="seat-details-panel" class="card" style="background: rgba(15, 23, 42, 0.9); margin-top: 1rem; border-color: rgba(255,255,255,0.15);">
+          <!-- Action details populated by JS -->
+        </div>
+      </div>
+
+      <!-- 3. My Reservations Section -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📋 나의 예매 & 선점 내역 (실시간 만료 타이머)</div>
+          <button class="btn btn-secondary" style="font-size: 0.75rem;" onclick="loadMyReservations()">새로고침</button>
+        </div>
+        <div id="my-reservations-list">
+          <!-- Reservations table populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Admin Console -->
+    <div id="tab-admin" class="tab-content">
+      <div class="grid-2">
+        <!-- Create Concert Form -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">➕ 신규 공연 등록</div>
+          </div>
+          <form onsubmit="handleCreateConcertForm(event)">
+            <div class="form-group">
+              <label>공연명</label>
+              <input type="text" name="title" required placeholder="예: 2026 라이브 콘서트">
+            </div>
+            <div class="form-group">
+              <label>공연 장소</label>
+              <input type="text" name="venue" required placeholder="예: 올림픽 체조경기장">
+            </div>
+            <div class="form-group">
+              <label>포스터 이미지 URL</label>
+              <input type="url" name="imageUrl" placeholder="https://..." value="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800">
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label>좌석 선점 시간 (초)</label>
+                <input type="number" name="holdSeconds" value="300" min="10" required>
+              </div>
+              <div class="form-group">
+                <label>1인당 최대 구매 매수</label>
+                <input type="number" name="maxTicketsPerUser" value="4" min="1" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>회차 공연 시작 일시</label>
+              <input type="datetime-local" name="startsAt" required value="2026-10-15T19:00">
+            </div>
+            <div class="grid-2">
+              <div class="form-group">
+                <label>예매 오픈 일시</label>
+                <input type="datetime-local" name="bookingOpensAt" required value="2026-09-20T10:00">
+              </div>
+              <div class="form-group">
+                <label>예매 마감 일시</label>
+                <input type="datetime-local" name="bookingClosesAt" required value="2026-10-15T18:00">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>수용 인원 (Capacity)</label>
+              <input type="number" name="capacity" value="50" min="1" required>
+            </div>
+            <div class="form-group">
+              <label>공연 설명</label>
+              <textarea name="description" rows="3" placeholder="공연 세부 소개"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">🚀 공연 등록</button>
+          </form>
+        </div>
+
+        <!-- Concerts Management -->
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🎛️ 등록된 공연 및 좌석 관리</div>
+              <button class="btn btn-secondary" style="font-size: 0.75rem;" onclick="loadAdminConcerts()">새로고침</button>
+            </div>
+            <div id="admin-concert-list">
+              <!-- Admin concerts populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Toast Notification Root -->
+  <div id="toast-container"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
