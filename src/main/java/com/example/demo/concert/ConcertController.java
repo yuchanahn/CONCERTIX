@@ -34,7 +34,15 @@ public class ConcertController {
     public ConcertDtos.PageResponse adminList(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return service.list(false, page, size);
+        return service.list(false, page, size, "");
+    }
+
+    @GetMapping("/api/admin/concerts/{search}/search")
+    public ConcertDtos.PageResponse search(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @PathVariable String search) {
+        return service.list(false, page, size, search);
     }
 
     @GetMapping("/api/admin/concerts/{id}")
@@ -62,7 +70,7 @@ public class ConcertController {
     public ConcertDtos.PageResponse list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return service.list(true, page, size);
+        return service.list(true, page, size, "");
     }
 
     @GetMapping("/api/concerts/{id}")

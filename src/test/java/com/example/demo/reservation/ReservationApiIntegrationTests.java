@@ -116,13 +116,17 @@ class ReservationApiIntegrationTests extends TestInfrastructure {
         assertThat(detail.statusCode()).isEqualTo(200);
         assertThat(detail.body()).contains("\"status\":\"PENDING_PAYMENT\"");
 
+        assertThat(detail.body()).contains("\"startTime\":");
+
         // 9. User1 cancels the reservation (200)
-        HttpResponse<String> cancelRes = send("POST", "/api/reservations/" + reservationId + "/cancel", user1Token, null);
+        HttpResponse<String> cancelRes = send("POST", "/api/reservations/" + reservationId + "/cancel", user1Token,
+                null);
         assertThat(cancelRes.statusCode()).isEqualTo(200);
         assertThat(cancelRes.body()).contains("\"status\":\"CANCELED\"");
 
         // 10. Canceling again returns 409
-        HttpResponse<String> cancelAgain = send("POST", "/api/reservations/" + reservationId + "/cancel", user1Token, null);
+        HttpResponse<String> cancelAgain = send("POST", "/api/reservations/" + reservationId + "/cancel", user1Token,
+                null);
         assertThat(cancelAgain.statusCode()).isEqualTo(409);
 
         // 11. Now User2 can reserve the freed seat (201)
@@ -151,7 +155,8 @@ class ReservationApiIntegrationTests extends TestInfrastructure {
         assertThat(res2.statusCode()).isEqualTo(201);
 
         // 3. User1 tries to reserve another seat, but maxTicketsPerUser is 1 (409)
-        HttpResponse<String> seatsRes = send("GET", "/api/admin/concerts/" + concertId + "/sessions/" + sessionId + "/seats", adminToken, null);
+        HttpResponse<String> seatsRes = send("GET",
+                "/api/admin/concerts/" + concertId + "/sessions/" + sessionId + "/seats", adminToken, null);
         String seat2Id = extractSecondSeatId(seatsRes.body());
         String payload2 = String.format("{\"sessionId\":\"%s\",\"seatId\":\"%s\"}", sessionId, seat2Id);
 
@@ -181,7 +186,8 @@ class ReservationApiIntegrationTests extends TestInfrastructure {
         // Wait 1.5 seconds for hold expiration
         Thread.sleep(1500);
 
-        // Public seat refresh lazily expires the old hold so the UI can select it again.
+        // Public seat refresh lazily expires the old hold so the UI can select it
+        // again.
         HttpResponse<String> refreshedSeats = send(
                 "GET",
                 "/api/concerts/" + concertId + "/sessions/" + sessionId + "/seats",
@@ -195,6 +201,7 @@ class ReservationApiIntegrationTests extends TestInfrastructure {
         // User2 holds the expired seat successfully (201)
         HttpResponse<String> expiredReclaimed = send("POST", "/api/reservations", user2Token, payload);
         assertThat(expiredReclaimed.statusCode()).isEqualTo(201);
+        String user2ReservationId = extractField(expiredReclaimed.body(), "id");
 
         // The old owner must not be able to release the seat now held by User2.
         HttpResponse<String> staleCancel = send(
@@ -205,6 +212,10 @@ class ReservationApiIntegrationTests extends TestInfrastructure {
         assertThat(staleCancel.statusCode()).isEqualTo(409);
         assertThat(seatRepository.findById(UUID.fromString(seatId)).orElseThrow().getStatus())
                 .isEqualTo(SeatStatus.HELD);
+        Reservation user2Reservation = reservationRepository.findById(UUID.fromString(user2ReservationId))
+                .orElseThrow();
+        assertThat(user2Reservation.getSeat().getId()).isEqualTo(UUID.fromString(seatId));
+        assertThat(user2Reservation.getStatus()).isEqualTo(ReservationStatus.PENDING_PAYMENT);
     }
 
     @Test
@@ -299,7 +310,8 @@ class ReservationApiIntegrationTests extends TestInfrastructure {
                     "price": 50000
                 }
                 """, count);
-        HttpResponse<String> res = send("POST", "/api/admin/concerts/" + concertId + "/sessions/" + sessionId + "/seats", adminToken, payload);
+        HttpResponse<String> res = send("POST",
+                "/api/admin/concerts/" + concertId + "/sessions/" + sessionId + "/seats", adminToken, payload);
         Matcher matcher = Pattern.compile("\"id\":\"([^\"]+)\"").matcher(res.body());
         if (matcher.find()) {
             return matcher.group(1);

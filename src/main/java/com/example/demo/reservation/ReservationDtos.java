@@ -21,14 +21,16 @@ public final class ReservationDtos {
             String section,
             String rowLabel,
             int seatNumber,
-            long price) {
+            long price,
+            Instant startTime) {
 
         public static SeatInfoDto from(Seat seat) {
             return new SeatInfoDto(
                     seat.getSection(),
                     seat.getRowLabel(),
                     seat.getSeatNumber(),
-                    seat.getPrice());
+                    seat.getPrice(),
+                    seat.getSession().getStartsAt());
         }
     }
 

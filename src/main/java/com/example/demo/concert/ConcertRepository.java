@@ -16,6 +16,8 @@ public interface ConcertRepository extends JpaRepository<Concert, UUID> {
 
     Page<Concert> findByStatus(ConcertStatus status, Pageable pageable);
 
+    Page<Concert> findByTitleContainingIgnoreCase(String title, Pageable pageable);
+
     @EntityGraph(attributePaths = "sessions")
     @Query("select c from Concert c where c.id = :id")
     Optional<Concert> findWithSessionsById(UUID id);

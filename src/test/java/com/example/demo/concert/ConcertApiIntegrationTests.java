@@ -107,6 +107,51 @@ class ConcertApiIntegrationTests extends TestInfrastructure {
     }
 
     @Test
+    void adminCanSearchConcertTitlesByPartialCaseInsensitiveMatch() throws Exception {
+        String autumnId = stringField(
+                send("POST", "/api/admin/concerts", adminToken, createPayload()).body(),
+                "id");
+        String autumnJazzPayload = createPayload().replace("Autumn Live", "Autumn Jazz Night");
+        String autumnJazzId = stringField(
+                send("POST", "/api/admin/concerts", adminToken, autumnJazzPayload).body(),
+                "id");
+        String winterPayload = createPayload().replace("Autumn Live", "Winter Live");
+        String winterId = stringField(
+                send("POST", "/api/admin/concerts", adminToken, winterPayload).body(),
+                "id");
+
+        HttpResponse<String> partialMatch = send(
+                "GET",
+                "/api/admin/concerts/autumn/search?page=0&size=20",
+                adminToken,
+                null);
+        assertThat(partialMatch.statusCode()).isEqualTo(200);
+        assertThat(longField(partialMatch.body(), "totalElements")).isEqualTo(2);
+        assertThat(partialMatch.body()).contains("\"id\":\"" + autumnId + "\"");
+        assertThat(partialMatch.body()).contains("\"id\":\"" + autumnJazzId + "\"");
+        assertThat(partialMatch.body()).doesNotContain("\"id\":\"" + winterId + "\"");
+
+        HttpResponse<String> noMatch = send(
+                "GET",
+                "/api/admin/concerts/not-a-title/search?page=0&size=20",
+                adminToken,
+                null);
+        assertThat(noMatch.statusCode()).isEqualTo(200);
+        assertThat(longField(noMatch.body(), "totalElements")).isZero();
+
+        HttpResponse<String> adminList = send("GET", "/api/admin/concerts?page=0&size=20", adminToken, null);
+        assertThat(adminList.statusCode()).isEqualTo(200);
+        assertThat(longField(adminList.body(), "totalElements")).isEqualTo(3);
+
+        HttpResponse<String> forbidden = send(
+                "GET",
+                "/api/admin/concerts/autumn/search?page=0&size=20",
+                userToken,
+                null);
+        assertThat(forbidden.statusCode()).isEqualTo(403);
+    }
+
+    @Test
     void adminEndpointsRequireAdminAndPublicGetAllowsAnonymousOnlyForPublicRoutes() throws Exception {
         assertThat(send("POST", "/api/admin/concerts", null, createPayload()).statusCode()).isEqualTo(401);
         assertThat(send("POST", "/api/admin/concerts", userToken, createPayload()).statusCode()).isEqualTo(403);

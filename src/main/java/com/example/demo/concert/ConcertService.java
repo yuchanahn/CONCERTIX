@@ -84,12 +84,19 @@ public class ConcertService {
     }
 
     @Transactional(readOnly = true)
-    public ConcertDtos.PageResponse list(boolean publicOnly, int page, int size) {
+    public ConcertDtos.PageResponse list(boolean publicOnly, int page, int size, String search) {
         validatePage(page, size);
         PageRequest pageRequest = PageRequest.of(page, size, LIST_SORT);
-        Page<Concert> result = publicOnly
-                ? repo.findByStatus(ConcertStatus.PUBLISHED, pageRequest)
-                : repo.findAll(pageRequest);
+
+        Page<Concert> result;
+
+        if (!search.trim().equals("") && !publicOnly) {
+            result = repo.findByTitleContainingIgnoreCase(search, pageRequest);
+        } else {
+            result = publicOnly
+                    ? repo.findByStatus(ConcertStatus.PUBLISHED, pageRequest)
+                    : repo.findAll(pageRequest);
+        }
         return new ConcertDtos.PageResponse(
                 result.getContent().stream().map(this::summary).toList(),
                 page,
